@@ -46,6 +46,8 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_page_indices_tensor = None
         self.append_kv_page_indptr_tensor = None
         self.append_kv_last_page_len_tensor = None
+        self.batch_indices = None
+        self.positions = None
 
     def to_int_tensor(self, data: List[int]) -> torch.Tensor:
         return torch.tensor(data, dtype=torch.int32, device="cuda")
@@ -188,6 +190,21 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_last_page_len_tensor = self.to_int_tensor(
             prefill_kv_last_page_len + decode_kv_last_page_len
         )
+        
+        batch_indices = []
+        positions = []
+        num_sequences = len(self.append_qo_indptr_tensor) - 1
+        for i in range(num_sequences):
+            chunk_len = self.append_qo_indptr_tensor[i+1] - self.append_qo_indptr_tensor[i]
+            batch_indices.extend([i] * chunk_len)
+            num_kv_pages = self.append_kv_page_indptr_tensor[i+1] - self.append_kv_page_indptr_tensor[i]
+            final_len = (num_kv_pages - 1) * self.block_size + self.append_kv_last_page_len_tensor[i]
+            start_pos = final_len - chunk_len
+            positions.extend(range(start_pos, final_len))
+            
+        self.batch_indices = self.to_int_tensor(batch_indices)
+        self.positions = self.to_int_tensor(positions)
+        
 
     def end_forward(self):
         if self.contains_prefill:
@@ -224,7 +241,8 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             append_paged_kv_cache(
                 key,
                 value,
-                self.append_qo_indptr_tensor,
+                self.batch_indices,
+                self.positions,
                 kv_cache,
                 self.append_kv_page_indices_tensor,
                 self.append_kv_page_indptr_tensor,
