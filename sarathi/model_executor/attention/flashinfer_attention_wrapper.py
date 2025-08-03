@@ -191,6 +191,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             prefill_kv_last_page_len + decode_kv_last_page_len
         )
         
+        # Patch based on flashinfer-0.2.0.post1
         batch_indices = []
         positions = []
         num_sequences = len(self.append_qo_indptr_tensor) - 1
